@@ -1,33 +1,34 @@
 import sys
 sys.path.append(".")
 
-from src import ScenarioProcessor, ScenarioVisualizer
+from src import ScenarioProcessor
 from src.utils import read_data
 import copy
+from src.processor.metrics import has_red_light_running, tlhead_count
 
+if __name__ == "__main__":
+    # read example_runcode.py before reading this script snippet
 
-# read a list of scenario from a specified partition. this function return a list of scenario objects.
-# if scenario_id_set is not specified, all secnarios within this partition are returned
-scenario = read_data("/media/led/LED-WD1T/WOMD/validation/validation.tfrecord-00000-of-00150", )[30] # we get one for example
+    # read a list of scenario from a specified partition. this function return a list of scenario objects.
+    # if scenario_id_set is not specified, all secnarios within this partition are returned
+    scenario = read_data("/media/led/LED-WD1T/WOMD/validation/validation.tfrecord-00000-of-00150", )[30] # we get one for example
 
-# initantiate a ScenarioProcessor
-sp = ScenarioProcessor(scenario)
-
-# plot the map of this scenario to visualize it
-sv = ScenarioVisualizer(scenario)
-sv.save_map(base_dir=".")
-
-sv.save_video(base_dir=".", video_name="original.mp4")
-
-# call this function to execute imputation and correction of traffic signals, and return the result
-# specify "return_data=dymamic_states" to get the result in a format that is the same as how traffic signals are defined in the original scenario object
-dynamic_map_states = sp.generate_waymonic_tls(return_data="dynamic_states")
-
-# after that, you can replace the old dynamic_map_states object with the new one
-scenario_copied = copy.deepcopy(scenario)
-for t in range(91):
-    scenario_copied.dynamic_map_states[t].CopyFrom(dynamic_map_states[t])
+    # initantiate a ScenarioProcessor
+    sp = ScenarioProcessor(scenario)
+    # we call .generate_waymonic
+    tls_info_in_intersection_format = sp.generate_waymonic_tls(return_data="intersections")
+    # note: specify return_data="intersections" will return a list of Intersection, format is "list[list[list[ApproachingLane]]]"
+    # the outmost list() refers to a list of signalized intersections in this scenario
+    # the middle list() refers to a list of approaches of the intersection (e.g. a typical 4-way intersection has 4 approaches)
+    # the inner list() refers to a list of approaching lanes of this approach
+    # signal data is encoded there
     
-# visualize the result
-sv2 = ScenarioVisualizer(scenario_copied)
-sv2.save_video(base_dir=".", video_name="new.mp4")
+    # check whether there is a red light-running event
+    red_light_running_before_imputed: bool = has_red_light_running(tls_info_in_intersection_format, data_type="raw")
+    red_light_running_after_imputed: bool = has_red_light_running(tls_info_in_intersection_format, data_type="imputed")
+    
+    # count the number of traffic light heads before/after imputation
+    tlhead_count_raw: int = tlhead_count(tls_info_in_intersection_format, data_type="raw")
+    tlhead_count_imputed: int = tlhead_count(tls_info_in_intersection_format, data_type="imputed")
+    
+    1 - tlhead_count_raw / tlhead_count_imputed # this is the imputation rate for this scenario
